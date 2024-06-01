@@ -19,9 +19,13 @@ struct Layer {
 }
 
 impl Layer {
-    fn does_contain_cursor(&self, cursorpos: &CursorPos) -> bool {
+    fn does_contain_cursor(&self, cursorpos: &CursorPos, bar_visible: bool) -> bool {
         let bar_y_max = self.y + self.h;
-        let bar_y_min = self.y + 25;
+        let bar_y_min = if bar_visible {
+            self.y - 25
+        } else {
+            self.y + 25
+        };
         let bar_x_max = self.x + self.w;
         let bar_x_min = self.x;
 
@@ -85,7 +89,7 @@ fn main() {
             continue;
         };
 
-        let cursor_over_bar = bar_layer.does_contain_cursor(&cursorpos);
+        let cursor_over_bar = bar_layer.does_contain_cursor(&cursorpos, bar_visible);
 
         if cursor_over_bar && !bar_visible {
             let _ = Command::new("pkill").args(["-SIGUSR1", "waybar"]).spawn();
