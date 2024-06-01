@@ -21,7 +21,7 @@ struct Layer {
 impl Layer {
     fn does_contain_cursor(&self, cursorpos: &CursorPos) -> bool {
         let bar_y_max = self.y + self.h;
-        let bar_y_min = self.y;
+        let bar_y_min = self.y + 25;
         let bar_x_max = self.x + self.w;
         let bar_x_min = self.x;
 
@@ -69,6 +69,7 @@ fn main() {
 
     let mut bar_visible = true;
     loop {
+        sleep(time::Duration::from_millis(200));
         let Ok(cursorpos_stdout) = Command::new("hyprctl").args(["cursorpos", "-j"]).output()
         else {
             println!("Couldn't get cursor position");
@@ -97,6 +98,5 @@ fn main() {
             println!("I hid the bar. bar_visible = {}", bar_visible);
             dbg!(cursorpos.clone(), bar_layer.clone());
         }
-        sleep(time::Duration::from_millis(200));
     }
 }
