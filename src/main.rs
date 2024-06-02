@@ -76,16 +76,16 @@ fn main() {
         sleep(time::Duration::from_millis(200));
         let Ok(cursorpos_stdout) = Command::new("hyprctl").args(["cursorpos", "-j"]).output()
         else {
-            println!("Couldn't get cursor position");
+            eprintln!("Couldn't get cursor position");
             continue;
         };
         let cursorpos_stdout = cursorpos_stdout.stdout;
         let Ok(cursorpos_str) = String::from_utf8(cursorpos_stdout) else {
-            println!("Parsing stdout to a String failed");
+            eprintln!("Parsing stdout to a String failed");
             continue;
         };
         let Ok(cursorpos) = serde_json::from_str(&cursorpos_str) else {
-            println!("Deserializing the cursorpos string failed");
+            eprintln!("Deserializing the cursorpos string failed");
             continue;
         };
 
@@ -94,13 +94,11 @@ fn main() {
         if cursor_over_bar && !bar_visible {
             let _ = Command::new("pkill").args(["-SIGUSR1", "waybar"]).spawn();
             bar_visible = true;
-            println!("I unhid the bar. bar_visible = {}", bar_visible);
-            dbg!(cursorpos.clone(), bar_layer.clone());
+            println!("Bar revealed.");
         } else if !cursor_over_bar && bar_visible {
             let _ = Command::new("pkill").args(["-SIGUSR1", "waybar"]).spawn();
             bar_visible = false;
-            println!("I hid the bar. bar_visible = {}", bar_visible);
-            dbg!(cursorpos.clone(), bar_layer.clone());
+            println!("Bar hidden.");
         }
     }
 }
