@@ -22,9 +22,9 @@ impl Layer {
     fn does_contain_cursor(&self, cursorpos: &CursorPos, bar_visible: bool) -> bool {
         let bar_y_max = self.y + self.h;
         let bar_y_min = if bar_visible {
-            self.y - 25
+            self.y - (self.h * 2 / 3)
         } else {
-            self.y + 25
+            self.y + (self.h * 2 / 3)
         };
         let bar_x_max = self.x + self.w;
         let bar_x_min = self.x;
