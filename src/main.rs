@@ -20,12 +20,22 @@ struct Layer {
 
 impl Layer {
     fn does_contain_cursor(&self, cursorpos: &CursorPos, bar_visible: bool) -> bool {
-        let bar_y_max = self.y + self.h;
-        let bar_y_min = if bar_visible {
-            self.y - (self.h * 2 / 3)
+        let y_buffer = self.h * 2 / 3;
+        let mut bar_y_max = self.y + self.h;
+        let mut bar_y_min = self.y;
+
+        if self.y > self.h {
+            if bar_visible {
+                bar_y_min -= y_buffer;
+            } else {
+                bar_y_min += y_buffer;
+            };
+        } else if bar_visible {
+            bar_y_max += y_buffer;
         } else {
-            self.y + (self.h * 2 / 3)
-        };
+            bar_y_max -= y_buffer;
+        }
+
         let bar_x_max = self.x + self.w;
         let bar_x_min = self.x;
 
@@ -93,10 +103,12 @@ fn main() {
 
         if cursor_over_bar && !bar_visible {
             let _ = Command::new("pkill").args(["-SIGUSR1", "waybar"]).spawn();
+            let _ = Command::new("pkill").args(["-SIGUSR1", "nwg-dock"]).spawn();
             bar_visible = true;
             println!("Bar revealed.");
         } else if !cursor_over_bar && bar_visible {
             let _ = Command::new("pkill").args(["-SIGUSR1", "waybar"]).spawn();
+            let _ = Command::new("pkill").args(["-SIGUSR1", "nwg-dock"]).spawn();
             bar_visible = false;
             println!("Bar hidden.");
         }
