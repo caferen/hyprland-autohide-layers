@@ -107,6 +107,7 @@ fn main() {
             bar_visible = true;
             println!("Bar revealed.");
         } else if !cursor_over_bar && bar_visible {
+            sleep(time::Duration::from_secs(1));
             let _ = Command::new("pkill").args(["-SIGUSR1", "waybar"]).spawn();
             let _ = Command::new("pkill").args(["-SIGUSR1", "nwg-dock"]).spawn();
             bar_visible = false;
