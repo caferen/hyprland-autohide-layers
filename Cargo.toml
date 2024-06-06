@@ -1,5 +1,5 @@
 [package]
-name = "hyprland-autohide-waybar"
+name = "hyprland-autohide-layers"
 version = "0.1.0"
 edition = "2021"
 
