@@ -122,6 +122,13 @@ fn get_cursor_pos() -> anyhow::Result<CursorPos> {
 fn main() {
     let mut layers = get_layers().unwrap();
 
+    while layers.is_empty() {
+        sleep(std::time::Duration::from_secs(1));
+        layers = get_layers().unwrap();
+    }
+
+    println!("{:#?}", layers.clone());
+
     loop {
         sleep(time::Duration::from_millis(200));
 
