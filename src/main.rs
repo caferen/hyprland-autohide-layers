@@ -51,7 +51,6 @@ impl Layer {
 
     fn toggle_visibility(&mut self, cursorpos: &CursorPos) -> anyhow::Result<()> {
         let cursor_over_layer = self.does_contain_cursor(cursorpos);
-        dbg!(cursor_over_layer, self.visible);
         let toggle = || -> anyhow::Result<()> {
             Command::new("pkill")
                 .args(["-SIGUSR1", &self.namespace])
