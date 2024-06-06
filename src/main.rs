@@ -3,6 +3,8 @@ use std::{collections::HashMap, process::Command, thread::sleep};
 
 use serde::Deserialize;
 
+const NAMESPACES: [(&str, &str); 2] = [("waybar", "waybar"), ("gtk-layer-shell", "nwg-dock")];
+
 #[derive(Deserialize, Debug, Clone)]
 struct CursorPos {
     x: i32,
@@ -16,21 +18,23 @@ struct Layer {
     w: i32,
     h: i32,
     namespace: String,
+    #[serde(skip_deserializing)]
+    visible: bool,
 }
 
 impl Layer {
-    fn does_contain_cursor(&self, cursorpos: &CursorPos, bar_visible: bool) -> bool {
+    fn does_contain_cursor(&self, cursorpos: &CursorPos) -> bool {
         let y_buffer = self.h * 2 / 3;
         let mut bar_y_max = self.y + self.h;
         let mut bar_y_min = self.y;
 
         if self.y > self.h {
-            if bar_visible {
+            if self.visible {
                 bar_y_min -= y_buffer;
             } else {
                 bar_y_min += y_buffer;
             };
-        } else if bar_visible {
+        } else if self.visible {
             bar_y_max += y_buffer;
         } else {
             bar_y_max -= y_buffer;
@@ -44,6 +48,29 @@ impl Layer {
             && cursorpos.x <= bar_x_max
             && cursorpos.x >= bar_x_min
     }
+
+    fn toggle_visibility(&mut self, cursorpos: &CursorPos) -> anyhow::Result<()> {
+        let cursor_over_layer = self.does_contain_cursor(cursorpos);
+        dbg!(cursor_over_layer, self.visible);
+        let toggle = || -> anyhow::Result<()> {
+            Command::new("pkill")
+                .args(["-SIGUSR1", &self.namespace])
+                .spawn()?;
+            Ok(())
+        };
+        if cursor_over_layer && !self.visible {
+            toggle()?;
+            self.visible = true;
+            println!("{} revealed.", self.namespace);
+        } else if !cursor_over_layer && self.visible {
+            sleep(time::Duration::from_secs(1));
+            toggle()?;
+            self.visible = false;
+            println!("{} hidden.", self.namespace);
+        }
+
+        Ok(())
+    }
 }
 
 type Level = u16;
@@ -54,64 +81,64 @@ struct LayerByLevel {
     levels: HashMap<Level, Vec<Layer>>,
 }
 
-fn main() {
-    let primary_monitor = std::env::var("PRIMARY_MONITOR").unwrap();
-
+fn get_layers() -> anyhow::Result<Vec<Layer>> {
     let layers_stdout = Command::new("hyprctl")
         .args(["layers", "-j"])
-        .output()
-        .unwrap()
+        .output()?
         .stdout;
-    let layers_str = String::from_utf8(layers_stdout).unwrap();
-    let layers: HashMap<Monitor, LayerByLevel> = serde_json::from_str(&layers_str).unwrap();
+    let layers_str = String::from_utf8(layers_stdout)?;
+    let levels_by_monitor: HashMap<Monitor, LayerByLevel> = serde_json::from_str(&layers_str)?;
 
-    let primary_monitor_layers = layers.get(&primary_monitor).unwrap();
-    let bar_layer = primary_monitor_layers
-        .levels
-        .iter()
-        .filter_map(|(_, layers)| {
-            if layers.is_empty() || layers.first().unwrap().namespace != "waybar" {
-                return None;
-            }
-
-            Some(layers.first().cloned().unwrap())
+    Ok(levels_by_monitor
+        .into_iter()
+        .flat_map(|(_, layer_by_level)| {
+            layer_by_level
+                .levels
+                .into_iter()
+                .flat_map(|(_, layer)| layer)
+                .collect::<Vec<Layer>>()
         })
-        .collect::<Vec<Layer>>()
-        .first()
-        .unwrap()
-        .clone();
+        .filter_map(|layer| {
+            for namespace in NAMESPACES {
+                if namespace.0 == layer.namespace {
+                    return Some(Layer {
+                        namespace: namespace.1.to_string(),
+                        visible: true,
+                        ..layer
+                    });
+                }
+            }
+            None
+        })
+        .collect::<Vec<Layer>>())
+}
 
-    let mut bar_visible = true;
+fn get_cursor_pos() -> anyhow::Result<CursorPos> {
+    let cursorpos_stdout = Command::new("hyprctl").args(["cursorpos", "-j"]).output()?;
+    let cursorpos_stdout = cursorpos_stdout.stdout;
+    let cursorpos_str = String::from_utf8(cursorpos_stdout)?;
+    Ok(serde_json::from_str(cursorpos_str.as_str())?)
+}
+
+fn main() {
+    let mut layers = get_layers().unwrap();
+
     loop {
         sleep(time::Duration::from_millis(200));
-        let Ok(cursorpos_stdout) = Command::new("hyprctl").args(["cursorpos", "-j"]).output()
-        else {
-            eprintln!("Couldn't get cursor position");
-            continue;
-        };
-        let cursorpos_stdout = cursorpos_stdout.stdout;
-        let Ok(cursorpos_str) = String::from_utf8(cursorpos_stdout) else {
-            eprintln!("Parsing stdout to a String failed");
-            continue;
-        };
-        let Ok(cursorpos) = serde_json::from_str(&cursorpos_str) else {
-            eprintln!("Deserializing the cursorpos string failed");
-            continue;
+
+        let cursorpos = match get_cursor_pos() {
+            Ok(cursorpos) => cursorpos,
+            Err(err) => {
+                eprintln!("{}", err);
+                continue;
+            }
         };
 
-        let cursor_over_bar = bar_layer.does_contain_cursor(&cursorpos, bar_visible);
-
-        if cursor_over_bar && !bar_visible {
-            let _ = Command::new("pkill").args(["-SIGUSR1", "waybar"]).spawn();
-            let _ = Command::new("pkill").args(["-SIGUSR1", "nwg-dock"]).spawn();
-            bar_visible = true;
-            println!("Bar revealed.");
-        } else if !cursor_over_bar && bar_visible {
-            sleep(time::Duration::from_secs(1));
-            let _ = Command::new("pkill").args(["-SIGUSR1", "waybar"]).spawn();
-            let _ = Command::new("pkill").args(["-SIGUSR1", "nwg-dock"]).spawn();
-            bar_visible = false;
-            println!("Bar hidden.");
+        for layer in layers.iter_mut() {
+            match layer.toggle_visibility(&cursorpos) {
+                Ok(_) => {}
+                Err(err) => eprintln!("{}", err),
+            }
         }
     }
 }
