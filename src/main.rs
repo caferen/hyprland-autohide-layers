@@ -119,6 +119,25 @@ fn get_cursor_pos() -> anyhow::Result<CursorPos> {
     Ok(serde_json::from_str(cursorpos_str.as_str())?)
 }
 
+#[derive(Deserialize, Debug, Clone)]
+struct Client {
+    fullscreen: bool,
+    #[serde(rename = "focusHistoryID")]
+    focus_history_id: u16,
+}
+
+fn fullscreen_focused() -> anyhow::Result<bool> {
+    let clients_stdout = Command::new("hyprctl")
+        .args(["clients", "-j"])
+        .output()?
+        .stdout;
+    let clients_str = String::from_utf8(clients_stdout)?;
+    let clients: Vec<Client> = serde_json::from_str(&clients_str)?;
+    Ok(clients
+        .into_iter()
+        .any(|client| client.focus_history_id == 0 && client.fullscreen))
+}
+
 fn main() {
     let mut layers = get_layers().unwrap();
 
@@ -130,7 +149,11 @@ fn main() {
     println!("{:#?}", layers.clone());
 
     loop {
-        sleep(time::Duration::from_millis(200));
+        sleep(time::Duration::from_millis(100));
+
+        if fullscreen_focused().is_ok_and(|res| res) {
+            continue;
+        }
 
         let cursorpos = match get_cursor_pos() {
             Ok(cursorpos) => cursorpos,
