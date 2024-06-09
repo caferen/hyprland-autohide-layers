@@ -1,11 +1,16 @@
 use core::time;
-use std::{collections::HashMap, process::Command, thread::sleep};
+use std::{
+    collections::HashMap,
+    process::Command,
+    sync::{Arc, Condvar, Mutex, RwLock},
+    thread::{self, sleep},
+};
 
 use serde::Deserialize;
 
 const NAMESPACES: [(&str, &str); 2] = [("waybar", "waybar"), ("gtk-layer-shell", "nwg-dock")];
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Copy, Clone, PartialEq)]
 struct CursorPos {
     x: i32,
     y: i32,
@@ -62,7 +67,7 @@ impl Layer {
             self.visible = true;
             println!("{} revealed.", self.namespace);
         } else if !cursor_over_layer && self.visible {
-            sleep(time::Duration::from_secs(1));
+            thread::sleep(time::Duration::from_secs(1));
             toggle()?;
             self.visible = false;
             println!("{} hidden.", self.namespace);
@@ -148,26 +153,54 @@ fn main() {
 
     println!("{:#?}", layers.clone());
 
+    let cursorpos = Arc::new(RwLock::new(get_cursor_pos().unwrap()));
+
+    let cursorpos_updater = Arc::clone(&cursorpos);
+    let cursorpos_update_notifier = Arc::new((Mutex::new(false), Condvar::new()));
+
+    layers.into_iter().for_each(|mut layer| {
+        let cursorpos = Arc::clone(&cursorpos);
+        let notifier = Arc::clone(&cursorpos_update_notifier);
+        thread::spawn(move || loop {
+            dbg!("Woke up to do update");
+            {
+                let curr_pos = cursorpos.read().unwrap();
+
+                match layer.toggle_visibility(&curr_pos) {
+                    Ok(_) => {}
+                    Err(err) => eprintln!("{}", err),
+                }
+            }
+            let lock = notifier.0.lock().unwrap();
+            let _guard = notifier.1.wait(lock).unwrap();
+        });
+    });
+
+    let notifier = Arc::clone(&cursorpos_update_notifier);
+
     loop {
-        sleep(time::Duration::from_millis(100));
+        thread::sleep(time::Duration::from_millis(100));
+        dbg!("Checking cursor pos");
 
         if fullscreen_focused().is_ok_and(|res| res) {
             continue;
         }
 
-        let cursorpos = match get_cursor_pos() {
-            Ok(cursorpos) => cursorpos,
+        let mut prev_pos = cursorpos_updater.write().unwrap();
+
+        let curr_pos = match get_cursor_pos() {
+            Ok(new_cursorpos) => new_cursorpos,
             Err(err) => {
                 eprintln!("{}", err);
                 continue;
             }
         };
 
-        for layer in layers.iter_mut() {
-            match layer.toggle_visibility(&cursorpos) {
-                Ok(_) => {}
-                Err(err) => eprintln!("{}", err),
-            }
+        if *prev_pos == curr_pos {
+            continue;
         }
+
+        *prev_pos = curr_pos;
+        notifier.1.notify_all();
     }
 }
