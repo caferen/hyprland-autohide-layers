@@ -6,22 +6,28 @@ use std::{
     thread::{self, sleep},
 };
 
+use clap::Parser;
 use serde::Deserialize;
 
-const NAMESPACES: [(&str, &str); 2] = [("waybar", "waybar"), ("gtk-layer-shell", "nwg-dock")];
+#[derive(Parser, Debug)]
+#[command(version, about)]
+struct Opts {
+    #[arg(short, long)]
+    namespace: Vec<String>,
+}
 
 #[derive(Deserialize, Debug, Copy, Clone, PartialEq)]
 struct CursorPos {
-    x: i32,
-    y: i32,
+    x: f32,
+    y: f32,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 struct Layer {
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
     namespace: String,
     #[serde(skip_deserializing)]
     visible: bool,
@@ -29,7 +35,7 @@ struct Layer {
 
 impl Layer {
     fn does_contain_cursor(&self, cursorpos: &CursorPos) -> bool {
-        let y_buffer = self.h * 2 / 3;
+        let y_buffer = self.h * 2.0 / 3.0;
         let mut bar_y_max = self.y + self.h;
         let mut bar_y_min = self.y;
 
@@ -85,7 +91,7 @@ struct LayerByLevel {
     levels: HashMap<Level, Vec<Layer>>,
 }
 
-fn get_layers() -> anyhow::Result<Vec<Layer>> {
+fn get_layers(namespaces: &Vec<String>) -> anyhow::Result<Vec<Layer>> {
     let layers_stdout = Command::new("hyprctl")
         .args(["layers", "-j"])
         .output()?
@@ -103,10 +109,10 @@ fn get_layers() -> anyhow::Result<Vec<Layer>> {
                 .collect::<Vec<Layer>>()
         })
         .filter_map(|layer| {
-            for namespace in NAMESPACES {
-                if namespace.0 == layer.namespace {
+            for namespace in namespaces {
+                if *namespace == layer.namespace {
                     return Some(Layer {
-                        namespace: namespace.1.to_string(),
+                        namespace: namespace.to_string(),
                         visible: true,
                         ..layer
                     });
@@ -144,11 +150,12 @@ fn fullscreen_focused() -> anyhow::Result<bool> {
 }
 
 fn main() {
-    let mut layers = get_layers().unwrap();
+    let opts = Opts::parse();
+    let mut layers = get_layers(&opts.namespace).unwrap();
 
     while layers.is_empty() {
         sleep(std::time::Duration::from_secs(1));
-        layers = get_layers().unwrap();
+        layers = get_layers(&opts.namespace).unwrap();
     }
 
     println!("{:#?}", layers.clone());
