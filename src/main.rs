@@ -133,11 +133,12 @@ fn get_cursor_pos() -> anyhow::Result<CursorPos> {
 #[derive(Deserialize, Debug, Clone)]
 struct Client {
     fullscreen: bool,
+    floating: bool,
     #[serde(rename = "focusHistoryID")]
     focus_history_id: u16,
 }
 
-fn fullscreen_focused() -> anyhow::Result<bool> {
+fn fullscreen_or_floating_focused() -> anyhow::Result<bool> {
     let clients_stdout = Command::new("hyprctl")
         .args(["clients", "-j"])
         .output()?
@@ -146,7 +147,7 @@ fn fullscreen_focused() -> anyhow::Result<bool> {
     let clients: Vec<Client> = serde_json::from_str(&clients_str)?;
     Ok(clients
         .into_iter()
-        .any(|client| client.focus_history_id == 0 && client.fullscreen))
+        .any(|client| client.focus_history_id == 0 && (client.fullscreen || client.floating)))
 }
 
 fn main() {
@@ -189,7 +190,7 @@ fn main() {
         thread::sleep(time::Duration::from_millis(100));
         dbg!("Checking cursor pos");
 
-        if fullscreen_focused().is_ok_and(|res| res) {
+        if fullscreen_or_floating_focused().is_ok_and(|res| res) {
             continue;
         }
 
