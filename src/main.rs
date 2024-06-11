@@ -154,12 +154,10 @@ fn main() {
     let opts = Opts::parse();
     let mut layers = get_layers(&opts.namespace).unwrap();
 
-    while layers.is_empty() {
+    while layers.len() != opts.namespace.len() {
         sleep(std::time::Duration::from_secs(1));
         layers = get_layers(&opts.namespace).unwrap();
     }
-
-    println!("{:#?}", layers.clone());
 
     let cursorpos = Arc::new(RwLock::new(get_cursor_pos().unwrap()));
 
