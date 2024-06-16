@@ -145,6 +145,13 @@ fn fullscreen_or_floating_focused() -> anyhow::Result<bool> {
         .stdout;
     let clients_str = String::from_utf8(clients_stdout)?;
     let clients: Vec<Client> = serde_json::from_str(&clients_str)?;
+
+    // If there aren't any clients, we don't want to
+    // stop the application from functioning
+    if clients.is_empty() {
+        return Ok(false);
+    }
+
     Ok(clients
         .into_iter()
         .any(|client| client.focus_history_id == 0 && (client.fullscreen || client.floating)))
