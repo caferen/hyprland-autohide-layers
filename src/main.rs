@@ -1,6 +1,8 @@
 use core::time;
 use std::{
     collections::HashMap,
+    io::{Read, Write},
+    os::unix::net::UnixStream,
     process::Command,
     sync::{Arc, Condvar, Mutex, RwLock},
     thread::{self, sleep},
@@ -91,12 +93,11 @@ struct LayerByLevel {
     levels: HashMap<Level, Vec<Layer>>,
 }
 
-fn get_layers(namespaces: &Vec<String>) -> anyhow::Result<Vec<Layer>> {
-    let layers_stdout = Command::new("hyprctl")
-        .args(["layers", "-j"])
-        .output()?
-        .stdout;
-    let layers_str = String::from_utf8(layers_stdout)?;
+fn get_layers(namespaces: &Vec<String>, socket: &str) -> anyhow::Result<Vec<Layer>> {
+    let mut stream = UnixStream::connect(socket).unwrap();
+    let _ = stream.write(b"j/layers");
+    let mut layers_str = String::new();
+    stream.read_to_string(&mut layers_str).unwrap();
     let levels_by_monitor: HashMap<Monitor, LayerByLevel> = serde_json::from_str(&layers_str)?;
 
     Ok(levels_by_monitor
@@ -123,10 +124,13 @@ fn get_layers(namespaces: &Vec<String>) -> anyhow::Result<Vec<Layer>> {
         .collect::<Vec<Layer>>())
 }
 
-fn get_cursor_pos() -> anyhow::Result<CursorPos> {
-    let cursorpos_stdout = Command::new("hyprctl").args(["cursorpos", "-j"]).output()?;
-    let cursorpos_stdout = cursorpos_stdout.stdout;
-    let cursorpos_str = String::from_utf8(cursorpos_stdout)?;
+fn get_cursor_pos(socket: &str) -> anyhow::Result<CursorPos> {
+    let mut stream = UnixStream::connect(socket).unwrap();
+    let _ = stream.write(b"j/cursorpos");
+    let mut cursorpos_str = String::new();
+    while cursorpos_str.is_empty() {
+        let _ = stream.read_to_string(&mut cursorpos_str);
+    }
     Ok(serde_json::from_str(cursorpos_str.as_str())?)
 }
 
@@ -138,12 +142,11 @@ struct Client {
     focus_history_id: u16,
 }
 
-fn fullscreen_or_floating_focused() -> anyhow::Result<bool> {
-    let clients_stdout = Command::new("hyprctl")
-        .args(["clients", "-j"])
-        .output()?
-        .stdout;
-    let clients_str = String::from_utf8(clients_stdout)?;
+fn fullscreen_or_floating_focused(socket: &str) -> anyhow::Result<bool> {
+    let mut stream = UnixStream::connect(socket).unwrap();
+    let _ = stream.write(b"j/clients");
+    let mut clients_str = String::new();
+    stream.read_to_string(&mut clients_str).unwrap();
     let clients: Vec<Client> = serde_json::from_str(&clients_str)?;
 
     // If there aren't any clients, we don't want to
@@ -158,15 +161,21 @@ fn fullscreen_or_floating_focused() -> anyhow::Result<bool> {
 }
 
 fn main() {
+    let xdg_runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap();
+    let hyprland_instance_signature = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap();
     let opts = Opts::parse();
-    let mut layers = get_layers(&opts.namespace).unwrap();
+    let socket_one = format!(
+        "{}/hypr/{}/.socket.sock",
+        xdg_runtime_dir, hyprland_instance_signature
+    );
+    let mut layers = get_layers(&opts.namespace, &socket_one).unwrap();
 
     while layers.len() != opts.namespace.len() {
         sleep(std::time::Duration::from_secs(1));
-        layers = get_layers(&opts.namespace).unwrap();
+        layers = get_layers(&opts.namespace, &socket_one).unwrap();
     }
 
-    let cursorpos = Arc::new(RwLock::new(get_cursor_pos().unwrap()));
+    let cursorpos = Arc::new(RwLock::new(get_cursor_pos(&socket_one).unwrap()));
 
     let cursorpos_updater = Arc::clone(&cursorpos);
     let cursorpos_update_notifier = Arc::new((Mutex::new(false), Condvar::new()));
@@ -195,13 +204,13 @@ fn main() {
         thread::sleep(time::Duration::from_millis(100));
         dbg!("Checking cursor pos");
 
-        if fullscreen_or_floating_focused().is_ok_and(|res| res) {
+        if fullscreen_or_floating_focused(&socket_one).is_ok_and(|res| res) {
             continue;
         }
 
         let mut prev_pos = cursorpos_updater.write().unwrap();
 
-        let curr_pos = match get_cursor_pos() {
+        let curr_pos = match get_cursor_pos(&socket_one) {
             Ok(new_cursorpos) => new_cursorpos,
             Err(err) => {
                 eprintln!("{}", err);
