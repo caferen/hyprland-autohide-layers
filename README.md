@@ -1,1 +1,1 @@
-In Hyprland, hide and show Waybar based on cursor position.
+A daemon to automatically send SIGUSR1 signals to layers in Hyprland based on cursor position.
